@@ -1,5 +1,7 @@
 using LibreHardwareMonitor.Hardware;
+using LibreHardwareMonitor.PawnIo;
 using PCMonitor.Models;
+using System.Security.Principal;
 
 namespace PCMonitor.Services;
 
@@ -11,6 +13,7 @@ public sealed class HardwareMonitorService : IDisposable
     private readonly Computer _computer;
     private readonly UpdateVisitor _visitor = new();
     private readonly object _sync = new();
+    private readonly object _hardwareLock = new();
     private readonly List<double?> _cpuTempHistory = [];
     private readonly List<double?> _cpuUsageHistory = [];
     private readonly List<double?> _gpuTempHistory = [];
@@ -19,9 +22,9 @@ public sealed class HardwareMonitorService : IDisposable
 
     private AppSettings _settings;
     private CancellationTokenSource? _cts;
-    private Task? _loop;
+    private Thread? _loop;
     private bool _opened;
-    private bool _sensorsLogged;
+    private int _collectCount;
 
     public HardwareMonitorService(AppSettings settings)
     {
@@ -44,18 +47,13 @@ public sealed class HardwareMonitorService : IDisposable
 
     public void Start()
     {
-        try
-        {
-            _computer.Open();
-            _opened = true;
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Não foi possível abrir o LibreHardwareMonitor. Sensores podem ficar indisponíveis.", ex);
-        }
-
         _cts = new CancellationTokenSource();
-        _loop = Task.Run(() => RunAsync(_cts.Token));
+        _loop = new Thread(() => Run(_cts.Token))
+        {
+            IsBackground = true,
+            Name = "PCMonitor.Hardware"
+        };
+        _loop.Start();
     }
 
     public void ApplySettings(AppSettings settings)
@@ -68,25 +66,42 @@ public sealed class HardwareMonitorService : IDisposable
 
     public IReadOnlyList<GpuOption> GetGpuOptions()
     {
-        if (!_opened)
+        lock (_hardwareLock)
         {
-            return [];
-        }
+            if (!_opened)
+            {
+                return [];
+            }
 
-        try
-        {
-            _computer.Accept(_visitor);
-            return _discovery.ToGpuOptions(_discovery.FindGpus(_computer));
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Falha ao listar GPUs.", ex);
-            return [];
+            try
+            {
+                _computer.Accept(_visitor);
+                return _discovery.ToGpuOptions(_discovery.FindGpus(_computer));
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("Falha ao listar GPUs.", ex);
+                return [];
+            }
         }
     }
 
-    private async Task RunAsync(CancellationToken token)
+    private void Run(CancellationToken token)
     {
+        try
+        {
+            lock (_hardwareLock)
+            {
+                AppLog.Info($"PawnIO instalado={PawnIo.IsInstalled} versão={PawnIo.Version} administrador={IsAdministrator()}");
+                _computer.Open();
+                _opened = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Não foi possível abrir o LibreHardwareMonitor. Sensores podem ficar indisponíveis.", ex);
+        }
+
         while (!token.IsCancellationRequested)
         {
             int delay;
@@ -97,7 +112,12 @@ public sealed class HardwareMonitorService : IDisposable
 
             try
             {
-                var snapshot = Collect();
+                HardwareStatus snapshot;
+                lock (_hardwareLock)
+                {
+                    snapshot = Collect();
+                }
+
                 LastSnapshot = snapshot;
                 SnapshotReady?.Invoke(snapshot);
             }
@@ -108,9 +128,9 @@ public sealed class HardwareMonitorService : IDisposable
 
             try
             {
-                await Task.Delay(delay, token);
+                token.WaitHandle.WaitOne(delay);
             }
-            catch (OperationCanceledException)
+            catch (ObjectDisposedException)
             {
                 break;
             }
@@ -122,10 +142,10 @@ public sealed class HardwareMonitorService : IDisposable
         if (_opened)
         {
             _computer.Accept(_visitor);
-            if (!_sensorsLogged)
+            _collectCount++;
+            if (_collectCount is 1 or 5)
             {
                 _discovery.LogOnce(_computer);
-                _sensorsLogged = true;
             }
         }
 
@@ -145,7 +165,7 @@ public sealed class HardwareMonitorService : IDisposable
             Name = cpuHw?.Name ?? "CPU não detectada",
             Temperature = !_opened ? null : ReadTemp(_discovery.FindCpuTemperature(_computer, cpuHw)),
             Usage = cpuHw is null ? null : Read(_discovery.FindCpuLoad(cpuHw)),
-            Clock = cpuHw is null ? null : ReadClock(_discovery.FindCpuClock(cpuHw))
+            Clock = cpuHw is null ? null : ReadClock(_discovery.FindCpuClock(cpuHw)) ?? CpuClockFallback.ReadMhz()
         };
 
         var gpu = new GpuStatus
@@ -233,7 +253,7 @@ public sealed class HardwareMonitorService : IDisposable
         try
         {
             _cts?.Cancel();
-            _loop?.Wait(TimeSpan.FromSeconds(2));
+            _loop?.Join(TimeSpan.FromSeconds(2));
         }
         catch (Exception ex)
         {
@@ -242,9 +262,13 @@ public sealed class HardwareMonitorService : IDisposable
 
         try
         {
-            if (_opened)
+            lock (_hardwareLock)
             {
-                _computer.Close();
+                if (_opened)
+                {
+                    _computer.Close();
+                    _opened = false;
+                }
             }
         }
         catch (Exception ex)
@@ -253,5 +277,11 @@ public sealed class HardwareMonitorService : IDisposable
         }
 
         _cts?.Dispose();
+    }
+
+    private static bool IsAdministrator()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     }
 }

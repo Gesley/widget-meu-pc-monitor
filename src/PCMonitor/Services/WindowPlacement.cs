@@ -8,14 +8,14 @@ public static class WindowPlacement
 {
     public static bool TryRestore(AppSettings settings, Window window)
     {
-        if (double.IsNaN(settings.Left) || double.IsNaN(settings.Top))
+        if (settings.Left is null || settings.Top is null)
         {
             return false;
         }
 
         var bounds = new System.Drawing.Rectangle(
-            (int)Math.Round(settings.Left),
-            (int)Math.Round(settings.Top),
+            (int)Math.Round(settings.Left.Value),
+            (int)Math.Round(settings.Top.Value),
             (int)Math.Max(1, Math.Round(settings.Width)),
             (int)Math.Max(1, Math.Round(settings.Height)));
 
@@ -35,8 +35,8 @@ public static class WindowPlacement
             return true;
         }
 
-        window.Left = settings.Left;
-        window.Top = settings.Top;
+        window.Left = settings.Left.Value;
+        window.Top = settings.Top.Value;
         ClampToVisible(window);
         return true;
     }

@@ -86,11 +86,10 @@ Script único (frontend + Release):
 
 ## Sensores e limitações do LibreHardwareMonitor
 
-- Nem todo hardware expõe temperatura de RAM, clock ou GPU package. Nesses casos a UI mostra `N/A`.
-- Alguns sensores (especialmente temperaturas de CPU/placa) exigem o driver WinRing0 e, em alguns PCs, execução elevada.
-- Nomes de sensores variam por fabricante. A descoberta prioriza tokens como `Package`, `Total`, `GPU Core`, sem depender de um modelo específico.
-- Intel, AMD e NVIDIA são suportados. Se houver várias GPUs, a dedicada é escolhida por padrão; a GPU pode ser trocada nas configurações.
-- Sem GPU dedicada, a integrada é usada se o LibreHardwareMonitor a listar.
+- Nem todo hardware expõe temperatura de RAM. Nesses casos a UI mostra `N/A`.
+- Temperatura e clock reais da CPU AMD exigem o [PawnIO](https://pawnio.eu/) **e** executar o PC Monitor como administrador (o Windows pede UAC na abertura). Sem isso o sensor `Core (Tctl/Tdie)` fica em 0.
+- Nomes de sensores variam por fabricante. A descoberta prioriza tokens como `Tctl`, `Package`, `Total`, `GPU Core`.
+- Intel, AMD e NVIDIA são suportados. Se houver várias GPUs, a dedicada é escolhida por padrão.
 
 ## Como adicionar um novo sensor
 
