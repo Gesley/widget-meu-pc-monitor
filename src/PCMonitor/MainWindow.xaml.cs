@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly HardwareMonitorService _monitor;
     private WebViewBridge? _bridge;
     private bool _clickThrough;
+    private bool _exiting;
 
     public MainWindow(AppSettings settings, HardwareMonitorService monitor)
     {
@@ -108,8 +109,19 @@ public partial class MainWindow : Window
         _bridge?.SendSettings(settings);
     }
 
+    public void ExitApp()
+    {
+        _exiting = true;
+        System.Windows.Application.Current.Shutdown();
+    }
+
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (_exiting)
+        {
+            return;
+        }
+
         e.Cancel = true;
         HideWidget();
     }
@@ -186,6 +198,16 @@ public partial class MainWindow : Window
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
         OpenSettings();
+    }
+
+    private void OnMinimizeClick(object sender, RoutedEventArgs e)
+    {
+        HideWidget();
+    }
+
+    private void OnCloseClick(object sender, RoutedEventArgs e)
+    {
+        ExitApp();
     }
 
     private static bool IsFromButton(object? source)

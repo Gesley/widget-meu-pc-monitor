@@ -65,11 +65,7 @@ public sealed class TrayService : IDisposable
         menu.Items.Add(topItem);
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Sair", null, (_, _) =>
-        {
-            _icon.Visible = false;
-            System.Windows.Application.Current.Shutdown();
-        });
+        menu.Items.Add("Sair", null, (_, _) => _window.Dispatcher.Invoke(_window.ExitApp));
         return menu;
     }
 

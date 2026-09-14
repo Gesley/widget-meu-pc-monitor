@@ -71,7 +71,7 @@
       </select>
     </label>
 
-    <button class="icon-btn" type="button" style="width:auto;padding:0 12px;margin-top:12px" @click="$emit('close')">
+    <button class="icon-btn" type="button" style="width:auto;padding:0 12px;margin-top:12px" @click.stop="close">
       Fechar
     </button>
   </aside>
@@ -92,5 +92,9 @@ const emit = defineEmits<{
 
 function persist() {
   emit('persist')
+}
+
+function close() {
+  emit('close')
 }
 </script>
